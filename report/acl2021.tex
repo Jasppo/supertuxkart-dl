@@ -1,0 +1,152 @@
+%
+% File acl2021.tex
+%
+%% Based on the style files for EMNLP 2020, which were
+%% Based on the style files for ACL 2020, which were
+%% Based on the style files for ACL 2018, NAACL 2018/19, which were
+%% Based on the style files for ACL-2015, with some improvements
+%%  taken from the NAACL-2016 style
+%% Based on the style files for ACL-2014, which were, in turn,
+%% based on ACL-2013, ACL-2012, ACL-2011, ACL-2010, ACL-IJCNLP-2009,
+%% EACL-2009, IJCNLP-2008...
+%% Based on the style files for EACL 2006 by 
+%%e.agirre@ehu.es or Sergi.Balari@uab.es
+%% and that of ACL 08 by Joakim Nivre and Noah Smith
+
+\documentclass[11pt,a4paper]{article}
+\usepackage[hyperref]{acl2021}
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{xcolor}
+\usepackage{colortbl}
+\usepackage{hanging}
+\renewcommand{\UrlFont}{\ttfamily\small}
+
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+%\aclfinalcopy % Uncomment this line for the final submission
+%\def\aclpaperid{***} %  Enter the acl Paper ID here
+
+%\setlength\titlebox{5cm}
+% You can expand the titlebox if you need extra space
+% to show all the authors. Please do not make the titlebox
+% smaller than 5cm (the original size); we will check this
+% in the camera-ready version and ask you to change it back.
+
+\newcommand\BibTeX{B\textsc{ib}\TeX}
+
+\title{Super TuxKart Ice Hockey Image Agent}
+
+
+
+\date{}
+
+\begin{document}
+\maketitle
+\begin{center}
+\end{center}
+
+
+\section{Introduction}
+
+Super TuxKart is a an open-source kart racing game which features a 2 vs 2 ice hockey mode. The goal of this game is for the karts to push a puck through the enemy goal. Through this project an image-based agent was designed to detect the puck's location from in-game images, and a controller was fine-tuned to act based on the agent's detections. 
+
+
+
+
+
+\section{Approach}
+
+\subsection{Controller}
+
+The initial controller relied on the puck's true location which was transformed into player screen coordinates using the kart's camera view and projection. This is so that once the model was completed, the puck's actual state could be replaced with the predicted location. The first controller determined acceleration based on distance from the puck and steer based on the angle from the kart's front to the puck. Another strategy involved one aggressor and one goalie; however, this track proved ineffective as the primary objective is to score points and not to defend. Lastly, the controller that worked best had similar logic to the first version, but included a few extra components. First, a “correcting" mode was added which reverses the kart if it is in danger of passing the puck.
+\begin{table}[h!]
+\centering
+\begin{tabular}{||c c||} 
+ \hline
+ Controller & Avg Points / Game \\ [0.5ex] 
+ \hline\hline
+  Initial Controller & 0.6 \\
+ Aggressor and Goalie & 0.71 \\
+ Final Version & 0.89 \\[1ex] 
+ \hline
+\end{tabular}
+\caption{Performance of Controllers for 100 Games with Different Puck Locations and Team Placements. Puck image calculated manually from game state.}
+\label{table:1}
+\end{table}
+ Additionally, the angle between the kart and the goal was used so that the kart tried to nudge the puck towards the enemy goal. It was further improved by having one player take a slightly more aggressive stance than the other in the beginning of a round.
+
+
+
+\subsection{Data Generation}
+
+Using our controller, 16 matches were simulated between our custom agent and image jurgen agent, with each match initialized with a random starting puck location and velocity to ensure a robust set of training data was generated. From these matches, around 30,000 sets of images, ground truth puck locations (in screen coordinates), and segmentation masks of the puck were generated. The segmentation masks were then used to create binary classification labels to indicate whether the puck was present in the image or not. This data was split 80-20 for training and validation.
+
+
+\subsection{Model}
+
+Three types of models similar to HW3/HW4/HW5 were trained and tested:
+\begin{enumerate}
+
+\item Aim Point Prediction (similar to HW5):
+\begin{itemize}
+    \item Model Architecture: Fully-convolutional network design with 3 down-convolutional layers followed by 3 up-convolutional layers, and skip connections between each pair. Each down-convolutional layer consisted of batch normalization followed by one 3x3 convolution and ReLU. A 1x1 convolution along with a Softmax operation was applied to the last up-convolutional layer to predict 2D normalized “screen” coordinates of the puck.
+    
+    \item Loss: During training, the L1 loss was used.
+\end{itemize}
+
+
+
+
+\item Point-based Object Detection and regression (similar to HW3 and HW4):
+
+\begin{itemize}
+    \item Model Architecture: Similar to the architecture used above for aim point prediction, except two outputs were predicted: a binary label indicating whether the puck is present in the image or not, and 2D puck coordinates. A 1x1 convolution along with a Softmax operation was applied to the last up-convolutional layer to predict 2D normalized “screen” coordinates of the puck. Additionally, a global average pooling layer followed by a linear layer was applied to the last up-convolution layer to generate a binary label for puck classification.
+    \item Loss: During training, multiple losses were optimized: Binary Cross Entropy loss for puck classification, and L1 Loss for puck coordinate regression. In instances where the puck was not in the image, the L1 loss was multiplied by zero.
+\end{itemize}
+
+
+\item Image segmentation and regression:
+
+\begin{itemize}
+    \item Model Architecture: Fully convolutional network with 3 down convolutional layers followed by 3 up-convolutional layers. A 1x1 convolution along with a softmax operation was applied to the last up-convolutional layer. Additionally, a spatial argmax was taken over the heatmap to produce the predicted model puck coordinates. 
+    \item Loss: Loss was calculated over the heatmap via binary cross entropy and predicted coordinates via mean squared error loss. The presence of the puck was determined by the strength and size of the predicted heatmap, but no puck classification loss was computed directly.
+\end{itemize}
+
+\end{enumerate}
+Each model was trained for 50 epochs using the Adam optimizer with a learning rate of 0.005 and a batch size of 50 images.  The results of each model are shown in the table below. 
+\begin{table}[h!]
+\centering
+\begin{tabular}{||c c c c||} 
+ \hline
+ Model Type & Measure & Train & Valid  \\ [0.5ex] 
+ \hline\hline
+ Aim Point Prediction  & loss & 0.07 & 0.25 \\
+ Point-based Detection  & accuracy & 99.7 \% & 98\% \\
+ Point-based Detection &  loss & 0.011 & 0.015 \\
+  Image Segmentation  & accuracy & 95 \% & 96\% \\[1ex] 
+ \hline
+\end{tabular}
+\caption{Model Performance on the Training and Validation Sets}
+\label{table:1}
+\end{table}
+Furthermore, image augmentation methods such as color jittering and horizontal flips were applied to prevent over-fitting, and a “Reduce on Plateau” learning rate scheduler was used. After using each model to run games, it was discovered that the point-based object detection model performed much better.
+
+
+\subsection{Modifying the Controller}
+
+Once the model was trained, the controller was modified to utilize the model's predictions for the pucks location. One issue that arose was how to handle noisy predictions. One attempt to handle noisy predictions was to take the average over the last 5 predictions to determine whether the puck was on screen. If the model makes an errant prediction that the puck is offscreen, the last detected coordinate of the puck is used by the controller. If the model consistently predicted that the puck was offscreen, we modified the controller to drive in wide circles to search for the puck. A further issue, was that on occasion the agent directed the puck away from the opponent's goal. These issues were addressed in the final version of the controller. We also added drift (when the kart needs to make big turns), nitro (when the kart and puck are aligned), fire (when the kart is near the puck), and a rescue strategy to handle situations where the agent is stuck against a wall or inside the soccer net. 
+
+\section{Conclusion}
+
+While many strategies were attempted, the tactic that worked best included a model that performed point-based object detection to locate the puck. Many versions of the controller were also tested, and the best one included the modifications listed above. While this project did not reach the goal of averaging one goal per game, many different designs were tested. After a final image detection architecture and controller was chosen, the image agent played against four opposing AI agents, and the final image agent averaged 0.75 goals per game.
+
+
+
+
+
+\end{document}
